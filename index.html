@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<meta name="theme-color" content="#0f0f1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Deepak Kumar · BITS AI ML</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<!-- Firebase SDK (free, shared real-time DB) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs }
+    from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+  // ── FIREBASE CONFIG ──────────────────────────────────────────────────────────
+  // STEP: Replace these with YOUR Firebase project credentials (free Spark plan).
+  // See SETUP GUIDE below (or the README at the hosted URL).
+  const firebaseConfig = {
+    apiKey: "AIzaSyCzL0mVljxau1zpiuf0PX7nLsKjKqoiCHk",
+    authDomain: "mtech-dashboard-267f7.firebaseapp.com",
+    projectId: "mtech-dashboard-267f7",
+    storageBucket: "mtech-dashboard-267f7.firebasestorage.app",
+    messagingSenderId: "208061808151",
+    appId: "1:208061808151:web:762ef1a87a3b13488fe652"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // Expose helpers to global scope (used by non-module scripts below)
+  window._fbDb = db;
+  window._fbDoc = doc;
+  window._fbSetDoc = setDoc;
+  window._fbGetDoc = getDoc;
+  window._fbOnSnapshot = onSnapshot;
+  window._fbReady = true;
+
+  // Bootstrap: load all data from Firestore once, then listen for changes
+  window._fbInit = async function() {
+    try {
+      const snap = await getDoc(doc(db, "dashboard", "state"));
+      if (snap.exists()) {
+        const data = snap.data();
+        Object.entries(data).forEach(([k, v]) => {
+          try { localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); }
+          catch(e) {}
+        });
+      }
+      // Push any local changes back to Firestore
+      window._fbFlush = async function(key, value) {
+        try {
+          const patch = {};
+          patch[key] = value;
+          await setDoc(doc(db, "dashboard", "state"), patch, { merge: true });
+        } catch(e) { console.warn("Firestore write failed:", e); }
+      };
+      // Live updates: when Firestore changes (another user/tab), update localStorage & re-render
+      onSnapshot(doc(db, "dashboard", "state"), (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        Object.entries(data).forEach(([k, v]) => {
+          try { localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); }
+          catch(e) {}
+        });
+        if (typeof render === "function") render();
+      });
+    } catch(e) {
+      console.warn("Firebase init failed – falling back to localStorage only.", e);
+      window._fbFlush = async function() {}; // no-op fallback
+    }
+    // Signal that init is done
+    window._fbInitDone = true;
+    if (typeof render === "function") render();
+  };
+  window._fbInit();
+</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f1a;--surface:#16162a;--surface2:#1e1e35;--surface3:#252545;
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.18);
+  --text:#f0eeff;--text2:#a09bbf;--text3:#6b6688;
+  --r-sm:6px;--r-md:10px;--r-lg:14px;
+  --aci-h:#a78bfa;--aci-s:#7c3aed;--aci-bg:rgba(124,58,237,0.12);--aci-br:rgba(167,139,250,0.3);
+  --drl-h:#34d399;--drl-s:#059669;--drl-bg:rgba(5,150,105,0.12);--drl-br:rgba(52,211,153,0.3);
+  --nlp-h:#60a5fa;--nlp-s:#2563eb;--nlp-bg:rgba(37,99,235,0.12);--nlp-br:rgba(96,165,250,0.3);
+  --seml-h:#fbbf24;--seml-s:#d97706;--seml-bg:rgba(217,119,6,0.12);--seml-br:rgba(251,191,36,0.3);
+}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+
+/* SYNC BANNER */
+#sync-banner{position:fixed;bottom:14px;right:14px;z-index:9999;font-size:12px;padding:6px 14px;border-radius:20px;border:0.5px solid;display:none;align-items:center;gap:6px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#sync-banner.saving{background:rgba(124,58,237,0.25);border-color:rgba(167,139,250,0.5);color:#c4b5fd;display:flex}
+#sync-banner.saved{background:rgba(5,150,105,0.25);border-color:rgba(52,211,153,0.5);color:#6ee7b7;display:flex}
+#sync-banner.offline{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.4);color:#fca5a5;display:flex}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* HERO */
+.hero{background:linear-gradient(135deg,#1a0533 0%,#0d1b4a 40%,#0a2e1a 100%);padding:2rem 1.25rem 1rem;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 20% 50%,rgba(124,58,237,0.25) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(37,99,235,0.2) 0%,transparent 50%),radial-gradient(ellipse at 60% 90%,rgba(5,150,105,0.15) 0%,transparent 50%)}
+.hero-inner{max-width:900px;margin:0 auto;position:relative}
+.hero-tag{font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:rgba(167,139,250,0.8);margin-bottom:6px;display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:6px}
+.hero-tag::before{content:'';width:20px;height:1.5px;background:rgba(167,139,250,0.6);border-radius:2px}
+.hero-name{font-size:clamp(22px,5vw,34px);font-weight:700;letter-spacing:-0.02em;line-height:1.15;background:linear-gradient(135deg,#fff 0%,#c4b5fd 50%,#93c5fd 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:14px;color:rgba(255,255,255,0.5);margin-top:4px}
+.hero-chips{display:-webkit-box;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{font-size:11px;padding:4px 12px;border-radius:20px;border:0.5px solid;font-weight:500}
+.chip-ai{background:rgba(124,58,237,0.2);border-color:rgba(167,139,250,0.4);color:#c4b5fd}
+.chip-ml{background:rgba(5,150,105,0.2);border-color:rgba(52,211,153,0.4);color:#6ee7b7}
+.chip-bits{background:rgba(37,99,235,0.2);border-color:rgba(96,165,250,0.4);color:#93c5fd}
+.hero-date{font-size:12px;color:var(--text3);margin-top:14px}
+
+/* COURSE NAV */
+.course-nav-wrap{background:rgba(22,22,42,0.96);border-bottom:0.5px solid var(--border);position:-webkit-sticky;position:sticky;top:0;z-index:100;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.course-nav{display:-webkit-box;display:flex;max-width:900px;margin:0 auto;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.course-nav::-webkit-scrollbar{display:none}
+.cnav-btn{-webkit-box-flex:0;flex-shrink:0;display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:8px;padding:14px 18px;border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;-webkit-transition:all 0.2s;transition:all 0.2s;white-space:nowrap;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.cnav-btn:hover{color:var(--text)}
+.cnav-btn.active-aci{color:var(--aci-h);border-bottom-color:var(--aci-h)}
+.cnav-btn.active-drl{color:var(--drl-h);border-bottom-color:var(--drl-h)}
+.cnav-btn.active-nlp{color:var(--nlp-h);border-bottom-color:var(--nlp-h)}
+.cnav-btn.active-seml{color:var(--seml-h);border-bottom-color:var(--seml-h)}
+.cnav-dot{width:8px;height:8px;border-radius:50%;-webkit-box-flex:0;flex-shrink:0}
+.dot-aci{background:var(--aci-h)}.dot-drl{background:var(--drl-h)}.dot-nlp{background:var(--nlp-h)}.dot-seml{background:var(--seml-h)}
+
+/* MAIN */
+.main{max-width:900px;margin:0 auto;padding:1.5rem 1rem 4rem}
+.course-panel{display:none}.course-panel.active{display:block}
+
+/* CARD HEADER */
+.ccard-header{border-radius:var(--r-lg) var(--r-lg) 0 0;padding:1.25rem 1.25rem 1rem;border:0.5px solid;border-bottom:none;position:relative;overflow:hidden}
+.ccard-header-inner{position:relative;z-index:1}
+.ccard-title{font-size:17px;font-weight:600;line-height:1.3}
+.ccard-meta{font-size:12px;margin-top:5px;display:-webkit-box;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:10px;-webkit-box-align:center;align-items:center}
+.ccard-meta span{display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:4px}
+.ccard-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:0.04em}
+.ch-aci{background:linear-gradient(135deg,rgba(124,58,237,0.25),rgba(124,58,237,0.05));border-color:var(--aci-br)}
+.ch-aci .ccard-title{color:#e9d5ff}.ch-aci .ccard-meta{color:#c4b5fd}.ch-aci .ccard-badge{background:var(--aci-bg);color:var(--aci-h);border:0.5px solid var(--aci-br)}
+.ch-drl{background:linear-gradient(135deg,rgba(5,150,105,0.25),rgba(5,150,105,0.05));border-color:var(--drl-br)}
+.ch-drl .ccard-title{color:#a7f3d0}.ch-drl .ccard-meta{color:#6ee7b7}.ch-drl .ccard-badge{background:var(--drl-bg);color:var(--drl-h);border:0.5px solid var(--drl-br)}
+.ch-nlp{background:linear-gradient(135deg,rgba(37,99,235,0.25),rgba(37,99,235,0.05));border-color:var(--nlp-br)}
+.ch-nlp .ccard-title{color:#bfdbfe}.ch-nlp .ccard-meta{color:#93c5fd}.ch-nlp .ccard-badge{background:var(--nlp-bg);color:var(--nlp-h);border:0.5px solid var(--nlp-br)}
+.ch-seml{background:linear-gradient(135deg,rgba(217,119,6,0.25),rgba(217,119,6,0.05));border-color:var(--seml-br)}
+.ch-seml .ccard-title{color:#fde68a}.ch-seml .ccard-meta{color:#fcd34d}.ch-seml .ccard-badge{background:var(--seml-bg);color:var(--seml-h);border:0.5px solid var(--seml-br)}
+
+/* TEACHERS */
+.teachers-section{background:var(--surface);border-left:0.5px solid var(--border);border-right:0.5px solid var(--border);padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border)}
+.teachers-header{display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;-webkit-box-pack:justify;justify-content:space-between;margin-bottom:8px}
+.teachers-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em}
+.teacher-row{display:-webkit-box;display:flex;-webkit-box-align:flex-start;align-items:flex-start;gap:10px;padding:7px 10px;background:var(--surface2);border-radius:var(--r-md);border:0.5px solid var(--border);margin-bottom:6px}
+.teacher-info{-webkit-box-flex:1;flex:1;min-width:0}
+.teacher-name{font-size:13px;font-weight:500;color:var(--text)}
+.teacher-comment{font-size:12px;color:var(--text2);margin-top:2px;font-style:italic}
+.teacher-edit-form{display:-webkit-box;display:flex;-webkit-box-orient:vertical;-webkit-box-direction:normal;flex-direction:column;gap:8px;padding:10px;background:var(--surface3);border-radius:var(--r-md);border:0.5px solid var(--border2);margin-bottom:6px}
+.teacher-edit-form input,.teacher-edit-form textarea{font-size:13px;padding:7px 10px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;outline:none;width:100%;-webkit-appearance:none;appearance:none}
+.teacher-edit-form input:focus,.teacher-edit-form textarea:focus{border-color:rgba(167,139,250,0.5)}
+.teacher-edit-form textarea{resize:vertical;min-height:56px;line-height:1.4}
+.sm-btn{font-size:12px;padding:5px 12px;border-radius:var(--r-sm);border:0.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;white-space:nowrap;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.sm-btn:hover{background:var(--surface2)}
+.sm-btn-primary{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;font-weight:600}
+.sm-btn-primary:hover{opacity:0.88}
+.sm-btn-danger{color:#fca5a5}.sm-btn-danger:hover{background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.4)}
+
+/* INNER TABS */
+.inner-tabs-wrap{background:var(--surface);border-left:0.5px solid var(--border);border-right:0.5px solid var(--border)}
+.inner-tabs{display:-webkit-box;display:flex;border-bottom:0.5px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.inner-tabs::-webkit-scrollbar{display:none}
+.itab-btn{-webkit-box-flex:0;flex-shrink:0;padding:10px 16px;border:none;background:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;-webkit-transition:all 0.15s;transition:all 0.15s;white-space:nowrap;display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.itab-btn:hover{color:var(--text2)}
+.aci-itab.active{color:var(--aci-h);border-bottom-color:var(--aci-h)}
+.drl-itab.active{color:var(--drl-h);border-bottom-color:var(--drl-h)}
+.nlp-itab.active{color:var(--nlp-h);border-bottom-color:var(--nlp-h)}
+.seml-itab.active{color:var(--seml-h);border-bottom-color:var(--seml-h)}
+
+/* PANES */
+.tab-pane{display:none;padding:1rem 1.25rem;-webkit-box-orient:vertical;-webkit-box-direction:normal;flex-direction:column;gap:8px;background:var(--surface);border-left:0.5px solid var(--border);border-right:0.5px solid var(--border)}
+.tab-pane.active{display:-webkit-box;display:flex}
+.card-footer{height:1rem;background:var(--surface);border:0.5px solid var(--border);border-top:none;border-radius:0 0 var(--r-lg) var(--r-lg)}
+
+/* TODO ITEMS */
+.todo-item{display:-webkit-box;display:flex;-webkit-box-align:flex-start;align-items:flex-start;gap:10px;padding:9px 11px;border:0.5px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}
+.todo-item.done{opacity:0.45}
+.todo-item.urgent{border-color:rgba(239,68,68,0.5);background:rgba(239,68,68,0.08)}
+.todo-item.upcoming{border-color:rgba(251,191,36,0.4);background:rgba(251,191,36,0.07)}
+.todo-check{width:16px;height:16px;-webkit-box-flex:0;flex-shrink:0;margin-top:2px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.todo-text{font-size:13px;-webkit-box-flex:1;flex:1;line-height:1.45;color:var(--text)}
+.todo-text.strike{text-decoration:line-through;color:var(--text3)}
+.todo-date{font-size:11px;color:var(--text3);margin-top:2px}
+.pill{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap;border:0.5px solid}
+.pill-urgent{background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.4);color:#fca5a5}
+.pill-soon{background:rgba(251,191,36,0.1);border-color:rgba(251,191,36,0.4);color:#fcd34d}
+.show-more-btn{font-size:12px;background:none;border:none;cursor:pointer;padding:2px 0;text-align:left;font-family:inherit;opacity:0.7;-webkit-tap-highlight-color:transparent}
+.show-more-btn:hover{opacity:1;text-decoration:underline}
+
+/* PROGRESS */
+.prog-row{display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:8px;font-size:11px;color:var(--text3)}
+.prog-wrap{-webkit-box-flex:1;flex:1;height:5px;background:var(--surface3);border-radius:4px;overflow:hidden}
+.prog-bar{height:100%;border-radius:4px;-webkit-transition:width 0.4s;transition:width 0.4s}
+
+/* ADD ROW */
+.add-row{display:-webkit-box;display:flex;gap:8px;margin-top:4px}
+.add-row input{-webkit-box-flex:1;flex:1;font-size:13px;padding:8px 12px;border:0.5px solid var(--border2);border-radius:var(--r-md);background:var(--surface3);color:var(--text);font-family:inherit;outline:none;min-width:0;-webkit-appearance:none;appearance:none}
+.add-row input:focus{border-color:rgba(167,139,250,0.5)}
+.add-btn{font-size:13px;padding:8px 14px;border:0.5px solid var(--border2);border-radius:var(--r-md);background:rgba(124,58,237,0.15);color:#c4b5fd;cursor:pointer;white-space:nowrap;font-family:inherit;display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:4px;font-weight:500;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.add-btn:hover{background:rgba(124,58,237,0.25)}
+
+/* DATA CARDS */
+.data-card{border:0.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface2)}
+.data-card-head{display:-webkit-box;display:flex;-webkit-box-pack:justify;justify-content:space-between;-webkit-box-align:center;align-items:center;padding:9px 12px;background:var(--surface3);border-bottom:0.5px solid var(--border);gap:8px}
+.data-card-name{font-size:13px;font-weight:500;color:var(--text)}
+.data-card-body{padding:10px 12px;display:-webkit-box;display:flex;-webkit-box-orient:vertical;-webkit-box-direction:normal;flex-direction:column;gap:8px}
+.data-dates{font-size:12px;color:var(--text2);display:-webkit-box;display:flex;gap:14px;-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.assign-prog-wrap{-webkit-box-flex:1;flex:1;height:9px;background:var(--surface3);border-radius:20px;overflow:hidden;border:0.5px solid var(--border)}
+.assign-prog-bar{height:100%;border-radius:20px;-webkit-transition:width 0.3s;transition:width 0.3s}
+.pct-input{width:52px;font-size:12px;padding:3px 6px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface3);color:var(--text);font-family:inherit;outline:none;text-align:center;-webkit-appearance:none;appearance:none}
+.pct-input:focus{border-color:rgba(167,139,250,0.5)}
+.del-btn{font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:3px 5px;border-radius:var(--r-sm);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.del-btn:hover{color:#fca5a5;background:rgba(239,68,68,0.1)}
+.status-dot{width:8px;height:8px;border-radius:50%;-webkit-box-flex:0;flex-shrink:0}
+
+/* EXAM BADGES */
+.ebadge{font-size:11px;padding:2px 9px;border-radius:20px;border:0.5px solid;font-weight:500}
+.eb-upcoming{background:rgba(96,165,250,0.1);border-color:rgba(96,165,250,0.4);color:#93c5fd}
+.eb-soon{background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.4);color:#fca5a5}
+.eb-done{background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.4);color:#6ee7b7}
+
+/* ADD FORM */
+.add-form{background:var(--surface3);border:0.5px solid var(--border2);border-radius:var(--r-md);padding:12px;display:none;-webkit-box-orient:vertical;-webkit-box-direction:normal;flex-direction:column;gap:10px;margin-top:4px}
+.add-form-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em}
+.form-grid{display:-webkit-box;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:8px}
+.form-grid input{font-size:13px;padding:8px 10px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;outline:none;-webkit-appearance:none;appearance:none;min-width:0}
+.form-grid input.form-full{width:100%}
+.form-grid input:not(.form-full){-webkit-box-flex:1;flex:1;min-width:130px}
+.form-grid input:focus{border-color:rgba(167,139,250,0.5);background:var(--surface)}
+.form-actions{display:-webkit-box;display:flex;gap:8px;-webkit-box-pack:end;justify-content:flex-end;-webkit-flex-wrap:wrap;flex-wrap:wrap}
+.btn-primary{font-size:12px;padding:7px 18px;border-radius:var(--r-md);border:none;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;cursor:pointer;font-family:inherit;font-weight:600;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.btn-primary:hover{opacity:0.88}
+.btn-cancel{font-size:12px;padding:7px 14px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.btn-cancel:hover{background:var(--surface2)}
+.toggle-form-btn{font-size:12px;padding:7px 14px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;gap:5px;-webkit-align-self:flex-start;align-self:flex-start;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.toggle-form-btn:hover{border-color:rgba(167,139,250,0.5);color:var(--aci-h)}
+.empty-state{font-size:13px;color:var(--text3);text-align:center;padding:16px 0}
+.sec-divider{border:none;border-top:0.5px solid var(--border);margin:2px 0}
+.sec-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em}
+.quiz-status{font-size:11px;padding:2px 8px;border-radius:20px;border:0.5px solid}
+.qs-open{background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.4);color:#6ee7b7}
+.qs-upcoming{background:rgba(96,165,250,0.1);border-color:rgba(96,165,250,0.4);color:#93c5fd}
+.qs-closed{background:rgba(107,102,136,0.2);border-color:rgba(107,102,136,0.4);color:var(--text3)}
+
+@media(max-width:600px){
+  .hero{padding:1.5rem 1rem 0.75rem}
+  .main{padding:1rem 0.75rem 3rem}
+  .cnav-btn{padding:12px 14px;font-size:12px}
+  .ccard-header{padding:1rem 1rem 0.75rem}
+  .tab-pane,.teachers-section{padding:0.875rem 1rem}
+  .data-dates{-webkit-box-orient:vertical;-webkit-box-direction:normal;flex-direction:column;gap:4px}
+  #sync-banner{bottom:8px;right:8px;font-size:11px;padding:5px 11px}
+}
+/* Firefox date/time input colour fix */
+input[type="date"],input[type="time"]{color-scheme:dark}
+/* Safari number input spinner hide */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+</style>
+</head>
+<body>
+
+<!-- Sync status banner -->
+<div id="sync-banner">
+  <span class="sync-dot"></span>
+  <span id="sync-msg">Saving…</span>
+</div>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-tag">M.Tech · BITS Pilani WILP</div>
+    <div class="hero-name">Deepak Kumar</div>
+    <div class="hero-sub">Artificial Intelligence &amp; Machine Learning</div>
+    <div class="hero-chips">
+      <span class="chip chip-ai"><i class="ti ti-brain" style="font-size:11px"></i> AI / ML</span>
+      <span class="chip chip-ml"><i class="ti ti-robot" style="font-size:11px"></i> Deep Learning</span>
+      <span class="chip chip-bits"><i class="ti ti-school" style="font-size:11px"></i> BITS Pilani</span>
+    </div>
+    <div class="hero-date" id="date-display"></div>
+  </div>
+</div>
+
+<div class="course-nav-wrap">
+  <nav class="course-nav" role="tablist" aria-label="Courses">
+    <button class="cnav-btn" id="nav-aci" onclick="switchCourse('aci')" role="tab"><span class="cnav-dot dot-aci"></span>ACI</button>
+    <button class="cnav-btn" id="nav-drl" onclick="switchCourse('drl')" role="tab"><span class="cnav-dot dot-drl"></span>DRL</button>
+    <button class="cnav-btn" id="nav-nlp" onclick="switchCourse('nlp')" role="tab"><span class="cnav-dot dot-nlp"></span>NLP</button>
+    <button class="cnav-btn" id="nav-seml" onclick="switchCourse('seml')" role="tab"><span class="cnav-dot dot-seml"></span>SEML</button>
+  </nav>
+</div>
+
+<div class="main"><div id="panels"></div></div>
+
+<script>
+// ── COURSE DEFINITIONS ────────────────────────────────────────────────────────
+var COURSES = [
+  {
+    id:"aci", hcls:"ch-aci", itabcls:"aci-itab", badgeText:"ACI",
+    title:"Artificial &amp; Computer Intelligence",
+    schedule:"Each Sunday · 08:30 AM", group:"Group 29",
+    defaultTeachers:[
+      {id:"t_aci1", name:"Prof. Boosi Shyamala", comment:"My Section"},
+      {id:"t_aci2", name:"Prof. Parthasarthy PD", comment:"Best Teacher ★"}
+    ],
+    defaultClasses:[], defaultWebinars:[], defaultAssignments:[], defaultExams:[], defaultQuizzes:[]
+  },
+  {
+    id:"drl", hcls:"ch-drl", itabcls:"drl-itab", badgeText:"DRL",
+    title:"Deep Reinforcement Learning",
+    schedule:"Each Saturday · 08:30 AM", group:"Group 138",
+    defaultTeachers:[
+      {id:"t_drl1", name:"Prof. Sangeetha", comment:"Best Teacher ★"},
+      {id:"t_drl2", name:"Prof. Raja Vadhana", comment:""}
+    ],
+    defaultClasses:[
+      {id:"dc1",text:"CS1 — Introduction to Reinforcement Learning",urgency:"",date:""},
+      {id:"dc2",text:"CS2 — Markov Decision Processes",urgency:"",date:""},
+      {id:"dc3",text:"CS3 — Dynamic Programming basics",urgency:"",date:""},
+      {id:"dc4",text:"CS4 — Monte Carlo Methods",urgency:"",date:""},
+      {id:"dc5",text:"CS5 — Temporal Difference Learning",urgency:"",date:""}
+    ],
+    defaultWebinars:[
+      {id:"dw1",text:"Webinar demo — Multi-Armed Bandit walkthrough",urgency:"warning",date:""},
+      {id:"dw2",text:"Webinar demo — Dynamic Programming implementation",urgency:"warning",date:""}
+    ],
+    defaultAssignments:[
+      {id:"drl_a1",name:"Assignment 1 — MAB + DP",start:"2026-05-18",end:"2026-06-08",pct:0}
+    ],
+    defaultExams:[], defaultQuizzes:[]
+  },
+  {
+    id:"nlp", hcls:"ch-nlp", itabcls:"nlp-itab", badgeText:"NLP",
+    title:"Natural Language Processing",
+    schedule:"Each Sunday · 01:30 PM", group:"Group 202",
+    defaultTeachers:[], defaultClasses:[], defaultWebinars:[], defaultAssignments:[],
+    defaultExams:[
+      {id:"nlp_e1",desc:"Quiz 1",date:"2026-05-24",time:"00:00",note:"Closes 29 May 2026 · 11:59 PM"}
+    ],
+    defaultQuizzes:[
+      {id:"nlp_q1",name:"Quiz 1",start:"2026-05-24",end:"2026-05-29"}
+    ]
+  },
+  {
+    id:"seml", hcls:"ch-seml", itabcls:"seml-itab", badgeText:"SEML",
+    title:"Software Engineering for Machine Learning",
+    schedule:"Each Saturday · 10:30 AM", group:"Group 178",
+    defaultTeachers:[], defaultClasses:[], defaultWebinars:[], defaultAssignments:[],
+    defaultExams:[
+      {id:"seml_e1",desc:"Quiz 1",date:"2026-05-23",time:"11:00",note:"Closes 27 May · 5 marks · 20 Qs · 10 min"}
+    ],
+    defaultQuizzes:[
+      {id:"seml_q1",name:"Quiz 1",start:"2026-05-23",end:"2026-05-27"}
+    ]
+  }
+];
+
+// ── STORAGE (localStorage + Firestore sync) ───────────────────────────────────
+var uid=function(){ return 'id'+Date.now()+Math.random().toString(36).slice(2,5); };
+function load(k,d){
+  try{ var v=localStorage.getItem(k); return v!=null?JSON.parse(v):d; }
+  catch(e){ return d; }
+}
+var _syncTimer = null;
+function save(k,v){
+  try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){}
+  // Debounce Firestore writes (avoid hammering on rapid changes)
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(function(){
+    if(window._fbFlush){
+      showSync('saving');
+      window._fbFlush(k, JSON.stringify(v))
+        .then(function(){ showSync('saved'); })
+        .catch(function(){ showSync('offline'); });
+    }
+  }, 600);
+}
+
+function showSync(state){
+  var b = document.getElementById('sync-banner');
+  var m = document.getElementById('sync-msg');
+  if(!b||!m) return;
+  b.className = 'sync-banner ' + state;
+  b.id = 'sync-banner';
+  if(state==='saving') m.textContent='Saving…';
+  else if(state==='saved') m.textContent='Saved ✓';
+  else m.textContent='Offline – saved locally';
+  clearTimeout(b._hideTimer);
+  if(state!=='saving') b._hideTimer=setTimeout(function(){ b.style.display='none'; b.className=''; },2500);
+}
+
+function init(c){
+  ['teachers','classes','webinars','assignments','exams','quizzes'].forEach(function(type){
+    var key='v4_'+type+'_'+c.id;
+    if(load(key,null)===null){
+      var def=c['default'+type.charAt(0).toUpperCase()+type.slice(1)];
+      save(key, def||[]);
+    }
+  });
+}
+COURSES.forEach(init);
+
+var activeCourse='aci';
+var activePaneTab={};
+COURSES.forEach(function(c){ activePaneTab[c.id]='classes'; });
+var editingTeacher={};
+var showAllDoneMap={};
+
+function pctColor(p){ return p>=100?'#10b981':p>50?'#818cf8':p>0?'#f59e0b':'#6b7280'; }
+function fmtDate(d){ if(!d) return '—'; try{ return new Date(d+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return d; } }
+function fmtDT(d,t){ if(!d) return '—'; try{ return new Date(d+'T'+(t||'00:00')).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})+' · '+(t||'00:00'); }catch(e){ return d; } }
+function examStatus(d,t){ if(!d) return 'upcoming'; var diff=(new Date(d+'T'+(t||'00:00'))-new Date())/864e5; return diff<0?'done':diff<3?'soon':'upcoming'; }
+function quizStatus(s,e){ var now=new Date(); var sd=new Date(s+'T00:00:00'); var ed=new Date(e+'T23:59:59'); if(!s) return 'upcoming'; if(now<sd) return 'upcoming'; if(now<=ed) return 'open'; return 'closed'; }
+var accentVar={aci:'var(--aci-h)',drl:'var(--drl-h)',nlp:'var(--nlp-h)',seml:'var(--seml-h)'};
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render(){
+  var el=document.getElementById('panels');
+  if(!el) return;
+  el.innerHTML=COURSES.map(renderPanel).join('');
+  var dd=document.getElementById('date-display');
+  if(dd) dd.textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  COURSES.forEach(function(c){
+    var nb=document.getElementById('nav-'+c.id);
+    if(nb) nb.className='cnav-btn'+(c.id===activeCourse?' active-'+c.id:'');
+  });
+}
+
+function renderPanel(c){
+  var atab=activePaneTab[c.id];
+  var teachers=load('v4_teachers_'+c.id,[]);
+  var tabs=[
+    {id:'classes',label:'Classes',icon:'ti-school'},
+    {id:'webinar',label:'Webinar',icon:'ti-video'},
+    {id:'assign',label:'Assignments',icon:'ti-file-description'},
+    {id:'quizzes',label:'Quizzes',icon:'ti-help-circle'},
+    {id:'exam',label:'Exams',icon:'ti-calendar-event'}
+  ];
+  var innerTabs='<div class="inner-tabs-wrap"><div class="inner-tabs">'+
+    tabs.map(function(t){
+      return '<button class="itab-btn '+c.itabcls+' '+(atab===t.id?'active':'')+'" onclick="switchPane(\''+c.id+'\',\''+t.id+'\')" role="tab" aria-selected="'+(atab===t.id?'true':'false')+'"><i class="ti '+t.icon+'" aria-hidden="true" style="font-size:13px"></i>'+t.label+'</button>';
+    }).join('')+
+  '</div></div>';
+
+  var header='<div class="ccard-header '+c.hcls+'"><div class="ccard-header-inner">'+
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">'+
+    '<div class="ccard-title">'+c.title+'</div>'+
+    '<span class="ccard-badge">'+c.badgeText+'</span></div>'+
+    '<div class="ccard-meta">'+
+    '<span><i class="ti ti-clock" style="font-size:12px" aria-hidden="true"></i>'+c.schedule+'</span>'+
+    '<span><i class="ti ti-users" style="font-size:12px" aria-hidden="true"></i>'+c.group+'</span>'+
+    '</div></div></div>';
+
+  return '<div class="course-panel '+(c.id===activeCourse?'active':'')+'" id="panel-'+c.id+'">'+
+    header+
+    renderTeachers(c,teachers)+
+    innerTabs+
+    renderTodoPane(c,'classes',load('v4_classes_'+c.id,[]),atab)+
+    renderTodoPane(c,'webinar',load('v4_webinars_'+c.id,[]),atab)+
+    renderAssignPane(c,load('v4_assignments_'+c.id,[]),atab)+
+    renderQuizPane(c,load('v4_quizzes_'+c.id,[]),atab)+
+    renderExamPane(c,load('v4_exams_'+c.id,[]),atab)+
+    '<div class="card-footer"></div></div>';
+}
+
+// ── TEACHERS ──────────────────────────────────────────────────────────────────
+function renderTeachers(c,teachers){
+  var editing=editingTeacher[c.id];
+  var rows=teachers.map(function(t){
+    if(editing===t.id){
+      return '<div class="teacher-edit-form">'+
+        '<input id="ten_'+c.id+'_'+t.id+'" value="'+escHtml(t.name)+'" placeholder="Teacher name">'+
+        '<textarea id="tec_'+c.id+'_'+t.id+'" placeholder="Comment / note (optional)">'+escHtml(t.comment||'')+'</textarea>'+
+        '<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">'+
+        '<button class="sm-btn sm-btn-danger" onclick="deleteTeacher(\''+c.id+'\',\''+t.id+'\')"><i class="ti ti-trash" style="font-size:12px" aria-hidden="true"></i> Delete</button>'+
+        '<button class="sm-btn" onclick="cancelEditTeacher(\''+c.id+'\')">Cancel</button>'+
+        '<button class="sm-btn sm-btn-primary" onclick="saveTeacher(\''+c.id+'\',\''+t.id+'\')">Save</button>'+
+        '</div></div>';
+    }
+    return '<div class="teacher-row">'+
+      '<div class="teacher-info">'+
+      '<div class="teacher-name"><i class="ti ti-user" style="font-size:12px;vertical-align:-1px;margin-right:5px;opacity:0.6" aria-hidden="true"></i>'+escHtml(t.name)+'</div>'+
+      (t.comment?'<div class="teacher-comment">'+escHtml(t.comment)+'</div>':'')+
+      '</div>'+
+      '<button class="sm-btn" onclick="startEditTeacher(\''+c.id+'\',\''+t.id+'\')"><i class="ti ti-pencil" style="font-size:12px" aria-hidden="true"></i></button>'+
+      '</div>';
+  }).join('');
+
+  var addForm=editing==='new'?'<div class="teacher-edit-form">'+
+    '<input id="ten_'+c.id+'_new" placeholder="Teacher name">'+
+    '<textarea id="tec_'+c.id+'_new" placeholder="Comment / note (optional)"></textarea>'+
+    '<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">'+
+    '<button class="sm-btn" onclick="cancelEditTeacher(\''+c.id+'\')">Cancel</button>'+
+    '<button class="sm-btn sm-btn-primary" onclick="addTeacher(\''+c.id+'\')">Add</button>'+
+    '</div></div>':'';
+
+  var addBtn=editing!=='new'?'<button class="sm-btn" onclick="startNewTeacher(\''+c.id+'\')"><i class="ti ti-plus" style="font-size:12px" aria-hidden="true"></i> Add teacher</button>':'';
+
+  return '<div class="teachers-section">'+
+    '<div class="teachers-header"><div class="teachers-label"><i class="ti ti-chalkboard" style="font-size:12px;vertical-align:-1px;margin-right:4px" aria-hidden="true"></i>Instructors</div></div>'+
+    (rows||(!editing?'<div style="font-size:13px;color:var(--text3);margin-bottom:8px">No instructors added yet.</div>':''))+
+    addForm+addBtn+'</div>';
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function startEditTeacher(cid,tid){ editingTeacher[cid]=tid; render(); }
+function startNewTeacher(cid){ editingTeacher[cid]='new'; render(); }
+function cancelEditTeacher(cid){ delete editingTeacher[cid]; render(); }
+function saveTeacher(cid,tid){
+  var nameEl=document.getElementById('ten_'+cid+'_'+tid);
+  var comEl=document.getElementById('tec_'+cid+'_'+tid);
+  if(!nameEl||!nameEl.value.trim()) return;
+  var ts=load('v4_teachers_'+cid,[]);
+  var t=ts.filter(function(x){return x.id===tid;})[0];
+  if(t){ t.name=nameEl.value.trim(); t.comment=comEl?comEl.value.trim():''; }
+  save('v4_teachers_'+cid,ts);
+  delete editingTeacher[cid]; render();
+}
+function addTeacher(cid){
+  var nameEl=document.getElementById('ten_'+cid+'_new');
+  var comEl=document.getElementById('tec_'+cid+'_new');
+  if(!nameEl||!nameEl.value.trim()) return;
+  var ts=load('v4_teachers_'+cid,[]);
+  ts.push({id:uid(),name:nameEl.value.trim(),comment:comEl?comEl.value.trim():''});
+  save('v4_teachers_'+cid,ts);
+  delete editingTeacher[cid]; render();
+}
+function deleteTeacher(cid,tid){
+  save('v4_teachers_'+cid, load('v4_teachers_'+cid,[]).filter(function(t){return t.id!==tid;}));
+  delete editingTeacher[cid]; render();
+}
+
+// ── TODO / CLASSES / WEBINAR ──────────────────────────────────────────────────
+function renderTodoPane(c,type,items,atab){
+  var paneId=type==='classes'?'classes':'webinar';
+  var doneKey='v4_done_'+c.id+'_'+type;
+  var showKey='v4_showdone_'+c.id+'_'+type;
+  var done=load(doneKey,{});
+  var showAll=load(showKey,false);
+  var MAX=2;
+  var accent=accentVar[c.id];
+  var pending=items.filter(function(t){return !done[t.id];});
+  var doneList=items.filter(function(t){return done[t.id];});
+  var shownDone=showAll?doneList:doneList.slice(0,MAX);
+  var hidden=doneList.length-shownDone.length;
+  var total=items.length, doneCount=doneList.length;
+  var pct=total?Math.round(doneCount/total*100):0;
+  var placeholder=type==='classes'?'Add a class topic / task…':'Add a webinar topic…';
+
+  function item(t){
+    var isDone=!!done[t.id];
+    var uc=t.urgency==='urgent'?'urgent':t.urgency==='warning'?'upcoming':'';
+    return '<div class="todo-item '+(isDone?'done':uc)+'">'+
+      '<input type="checkbox" class="todo-check" '+(isDone?'checked':'')+' style="accent-color:'+accent+'" onchange="toggleItem(\''+c.id+'\',\''+type+'\',\''+t.id+'\',this.checked)" aria-label="'+escHtml(t.text)+'">'+
+      '<div style="flex:1"><div class="todo-text '+(isDone?'strike':'')+'">'+escHtml(t.text)+'</div>'+
+      (t.date?'<div class="todo-date">'+t.date+'</div>':'')+
+      '</div>'+
+      (t.urgency&&!isDone?'<span class="pill '+(t.urgency==='urgent'?'pill-urgent':'pill-soon')+'">'+(t.urgency==='urgent'?'Urgent':'Soon')+'</span>':'')+
+      '<button class="del-btn" onclick="deleteItem(\''+c.id+'\',\''+type+'\',\''+t.id+'\')" aria-label="Delete"><i class="ti ti-x" style="font-size:12px" aria-hidden="true"></i></button>'+
+      '</div>';
+  }
+
+  var doneSection=doneList.length?
+    '<hr class="sec-divider"><div class="sec-label">Completed ('+doneCount+')</div>'+
+    shownDone.map(item).join('')+
+    (hidden>0?'<button class="show-more-btn" style="color:'+accent+'" onclick="toggleShowDone(\''+c.id+'\',\''+type+'\',true)">Show '+hidden+' more ↓</button>':'')+
+    (showAll&&doneList.length>MAX?'<button class="show-more-btn" style="color:'+accent+'" onclick="toggleShowDone(\''+c.id+'\',\''+type+'\',false)">Show fewer ↑</button>':''):'';
+
+  return '<div class="tab-pane '+(atab===paneId?'active':'')+'" id="pane_'+c.id+'_'+paneId+'">'+
+    '<div class="prog-row"><div class="prog-wrap"><div class="prog-bar" style="width:'+pct+'%;background:'+accent+'"></div></div><span>'+doneCount+'/'+total+' done</span></div>'+
+    pending.map(item).join('')+
+    (!items.length?'<div class="empty-state">Nothing here yet. Add below.</div>':'')+
+    doneSection+
+    '<div class="add-row">'+
+    '<input type="text" id="'+type+'input_'+c.id+'" placeholder="'+placeholder+'" onkeydown="if(event.key===\'Enter\')addItem(\''+c.id+'\',\''+type+'\')">'+
+    '<button class="add-btn" onclick="addItem(\''+c.id+'\',\''+type+'\')"><i class="ti ti-plus" aria-hidden="true"></i> Add</button>'+
+    '</div></div>';
+}
+
+function toggleItem(cid,type,tid,checked){
+  var key='v4_done_'+cid+'_'+type;
+  var d=load(key,{}); d[tid]=checked; save(key,d); render();
+}
+function addItem(cid,type){
+  var el=document.getElementById(type+'input_'+cid);
+  if(!el) return;
+  var text=el.value.trim(); if(!text) return;
+  var storeKey=type==='classes'?'v4_classes_':'v4_webinars_';
+  var items=load(storeKey+cid,[]);
+  items.push({id:uid(),text:text,urgency:'',date:''});
+  save(storeKey+cid,items); render();
+  setTimeout(function(){ var e=document.getElementById(type+'input_'+cid); if(e) e.focus(); },30);
+}
+function deleteItem(cid,type,tid){
+  var storeKey=type==='classes'?'v4_classes_':'v4_webinars_';
+  save(storeKey+cid, load(storeKey+cid,[]).filter(function(t){return t.id!==tid;}));
+  var dkey='v4_done_'+cid+'_'+type;
+  var d=load(dkey,{}); delete d[tid]; save(dkey,d); render();
+}
+function toggleShowDone(cid,type,val){ save('v4_showdone_'+cid+'_'+type,val); render(); }
+
+// ── ASSIGNMENTS ───────────────────────────────────────────────────────────────
+function renderAssignPane(c,assigns,atab){
+  var cards=assigns.map(function(a,i){
+    var p=Math.min(100,Math.max(0,Number(a.pct)||0));
+    var dotColor=p>=100?'#10b981':p>0?'#f59e0b':'#6b7280';
+    return '<div class="data-card">'+
+      '<div class="data-card-head">'+
+      '<div style="display:flex;align-items:center;gap:8px"><div class="status-dot" style="background:'+dotColor+'"></div><div class="data-card-name">'+escHtml(a.name)+'</div></div>'+
+      '<button class="del-btn" onclick="deleteAssign(\''+c.id+'\',\''+a.id+'\')"><i class="ti ti-x" style="font-size:12px" aria-hidden="true"></i></button>'+
+      '</div><div class="data-card-body">'+
+      '<div class="data-dates">'+
+      '<span><i class="ti ti-calendar" style="font-size:12px;vertical-align:-1px;margin-right:3px" aria-hidden="true"></i>Start: '+fmtDate(a.start)+'</span>'+
+      '<span><i class="ti ti-calendar-due" style="font-size:12px;vertical-align:-1px;margin-right:3px" aria-hidden="true"></i>Due: '+fmtDate(a.end)+'</span>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+      '<div class="assign-prog-wrap"><div class="assign-prog-bar" style="width:'+p+'%;background:'+pctColor(p)+'"></div></div>'+
+      '<input type="number" class="pct-input" min="0" max="100" value="'+p+'" onchange="updatePct(\''+c.id+'\','+i+',this.value)" aria-label="Completion %">'+
+      '<span style="font-size:12px;color:var(--text3)">%</span></div>'+
+      '<div style="font-size:11px;font-weight:600;color:'+pctColor(p)+'">'+p+'% complete'+(p>=100?' ✓':'')+'</div>'+
+      '</div></div>';
+  }).join('');
+
+  return '<div class="tab-pane '+(atab==='assign'?'active':'')+'" id="pane_'+c.id+'_assign">'+
+    (cards||'<div class="empty-state">No assignments yet.</div>')+
+    '<div class="add-form" id="aform_'+c.id+'">'+
+    '<div class="add-form-title">New assignment</div>'+
+    '<div class="form-grid">'+
+    '<input class="form-full" type="text" id="aname_'+c.id+'" placeholder="Assignment name">'+
+    '<input type="date" id="astart_'+c.id+'"><input type="date" id="aend_'+c.id+'">'+
+    '</div><div class="form-actions">'+
+    '<button class="btn-cancel" onclick="hideForm(\''+c.id+'\',\'aform\')">Cancel</button>'+
+    '<button class="btn-primary" onclick="addAssign(\''+c.id+'\')">Add</button>'+
+    '</div></div>'+
+    '<button class="toggle-form-btn" id="abtn_'+c.id+'" onclick="showForm(\''+c.id+'\',\'aform\')">'+
+    '<i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Add assignment</button></div>';
+}
+
+function addAssign(cid){
+  var name=document.getElementById('aname_'+cid);
+  if(!name||!name.value.trim()) return;
+  var assigns=load('v4_assignments_'+cid,[]);
+  assigns.push({id:uid(),name:name.value.trim(),
+    start:document.getElementById('astart_'+cid)?document.getElementById('astart_'+cid).value:'',
+    end:document.getElementById('aend_'+cid)?document.getElementById('aend_'+cid).value:'',pct:0});
+  save('v4_assignments_'+cid,assigns); activePaneTab[cid]='assign'; render();
+}
+function updatePct(cid,idx,val){
+  var assigns=load('v4_assignments_'+cid,[]);
+  if(assigns[idx]) assigns[idx].pct=Math.min(100,Math.max(0,Number(val)||0));
+  save('v4_assignments_'+cid,assigns);
+}
+function deleteAssign(cid,aid){
+  save('v4_assignments_'+cid, load('v4_assignments_'+cid,[]).filter(function(a){return a.id!==aid;}));
+  activePaneTab[cid]='assign'; render();
+}
+
+// ── QUIZZES ───────────────────────────────────────────────────────────────────
+function renderQuizPane(c,quizzes,atab){
+  var cards=quizzes.map(function(q){
+    var st=quizStatus(q.start,q.end);
+    var cls=st==='open'?'qs-open':st==='closed'?'qs-closed':'qs-upcoming';
+    var lbl=st==='open'?'Open now':st==='closed'?'Closed':'Upcoming';
+    return '<div class="data-card">'+
+      '<div class="data-card-head">'+
+      '<div style="display:flex;align-items:center;gap:8px"><span class="quiz-status '+cls+'">'+lbl+'</span><div class="data-card-name">'+escHtml(q.name)+'</div></div>'+
+      '<button class="del-btn" onclick="deleteQuiz(\''+c.id+'\',\''+q.id+'\')"><i class="ti ti-x" style="font-size:12px" aria-hidden="true"></i></button>'+
+      '</div><div class="data-card-body">'+
+      '<div class="data-dates">'+
+      '<span><i class="ti ti-calendar" style="font-size:12px;vertical-align:-1px;margin-right:3px" aria-hidden="true"></i>Opens: '+fmtDate(q.start)+'</span>'+
+      '<span><i class="ti ti-calendar-off" style="font-size:12px;vertical-align:-1px;margin-right:3px" aria-hidden="true"></i>Closes: '+fmtDate(q.end)+'</span>'+
+      '</div></div></div>';
+  }).join('');
+
+  return '<div class="tab-pane '+(atab==='quizzes'?'active':'')+'" id="pane_'+c.id+'_quizzes">'+
+    (cards||'<div class="empty-state">No quizzes added yet.</div>')+
+    '<div class="add-form" id="qform_'+c.id+'">'+
+    '<div class="add-form-title">New quiz</div>'+
+    '<div class="form-grid">'+
+    '<input class="form-full" type="text" id="qname_'+c.id+'" placeholder="Quiz name">'+
+    '<input type="date" id="qstart_'+c.id+'"><input type="date" id="qend_'+c.id+'">'+
+    '</div><div class="form-actions">'+
+    '<button class="btn-cancel" onclick="hideForm(\''+c.id+'\',\'qform\')">Cancel</button>'+
+    '<button class="btn-primary" onclick="addQuiz(\''+c.id+'\')">Add</button>'+
+    '</div></div>'+
+    '<button class="toggle-form-btn" id="qbtn_'+c.id+'" onclick="showForm(\''+c.id+'\',\'qform\')">'+
+    '<i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Add quiz</button></div>';
+}
+function addQuiz(cid){
+  var name=document.getElementById('qname_'+cid);
+  if(!name||!name.value.trim()) return;
+  var quizzes=load('v4_quizzes_'+cid,[]);
+  quizzes.push({id:uid(),name:name.value.trim(),
+    start:document.getElementById('qstart_'+cid)?document.getElementById('qstart_'+cid).value:'',
+    end:document.getElementById('qend_'+cid)?document.getElementById('qend_'+cid).value:''});
+  save('v4_quizzes_'+cid,quizzes); activePaneTab[cid]='quizzes'; render();
+}
+function deleteQuiz(cid,qid){
+  save('v4_quizzes_'+cid, load('v4_quizzes_'+cid,[]).filter(function(q){return q.id!==qid;}));
+  activePaneTab[cid]='quizzes'; render();
+}
+
+// ── EXAMS ─────────────────────────────────────────────────────────────────────
+function renderExamPane(c,exams,atab){
+  var cards=exams.map(function(e){
+    var st=examStatus(e.date,e.time);
+    var cls=st==='done'?'eb-done':st==='soon'?'eb-soon':'eb-upcoming';
+    var lbl=st==='done'?'Completed':st==='soon'?'Very soon':'Upcoming';
+    return '<div class="data-card">'+
+      '<div class="data-card-head">'+
+      '<div style="display:flex;align-items:center;gap:8px"><span class="ebadge '+cls+'">'+lbl+'</span><div class="data-card-name">'+escHtml(e.desc)+'</div></div>'+
+      '<button class="del-btn" onclick="deleteExam(\''+c.id+'\',\''+e.id+'\')"><i class="ti ti-x" style="font-size:12px" aria-hidden="true"></i></button>'+
+      '</div><div class="data-card-body">'+
+      '<div style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px">'+
+      '<i class="ti ti-calendar-event" style="font-size:14px" aria-hidden="true"></i>'+fmtDT(e.date,e.time)+'</div>'+
+      (e.note?'<div style="font-size:12px;color:var(--text3)">'+escHtml(e.note)+'</div>':'')+
+      '</div></div>';
+  }).join('');
+
+  return '<div class="tab-pane '+(atab==='exam'?'active':'')+'" id="pane_'+c.id+'_exam">'+
+    (cards||'<div class="empty-state">No exams scheduled.</div>')+
+    '<div class="add-form" id="eform_'+c.id+'">'+
+    '<div class="add-form-title">New exam / quiz</div>'+
+    '<div class="form-grid">'+
+    '<input class="form-full" type="text" id="edesc_'+c.id+'" placeholder="Exam or quiz name">'+
+    '<input type="date" id="edate_'+c.id+'"><input type="time" id="etime_'+c.id+'">'+
+    '<input class="form-full" type="text" id="enote_'+c.id+'" placeholder="Additional note (optional)">'+
+    '</div><div class="form-actions">'+
+    '<button class="btn-cancel" onclick="hideForm(\''+c.id+'\',\'eform\')">Cancel</button>'+
+    '<button class="btn-primary" onclick="addExam(\''+c.id+'\')">Add</button>'+
+    '</div></div>'+
+    '<button class="toggle-form-btn" id="ebtn_'+c.id+'" onclick="showForm(\''+c.id+'\',\'eform\')">'+
+    '<i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> Add exam / quiz</button></div>';
+}
+function addExam(cid){
+  var desc=document.getElementById('edesc_'+cid);
+  if(!desc||!desc.value.trim()) return;
+  var exams=load('v4_exams_'+cid,[]);
+  exams.push({id:uid(),desc:desc.value.trim(),
+    date:document.getElementById('edate_'+cid)?document.getElementById('edate_'+cid).value:'',
+    time:document.getElementById('etime_'+cid)?document.getElementById('etime_'+cid).value:'',
+    note:document.getElementById('enote_'+cid)?document.getElementById('enote_'+cid).value.trim():''});
+  save('v4_exams_'+cid,exams); activePaneTab[cid]='exam'; render();
+}
+function deleteExam(cid,eid){
+  save('v4_exams_'+cid, load('v4_exams_'+cid,[]).filter(function(e){return e.id!==eid;}));
+  activePaneTab[cid]='exam'; render();
+}
+
+// ── FORM HELPERS ──────────────────────────────────────────────────────────────
+function showForm(cid,prefix){
+  var f=document.getElementById(prefix+'_'+cid);
+  var b=document.getElementById(prefix.replace('form','btn')+'_'+cid);
+  if(f){ f.style.display='flex'; f.style.flexDirection='column'; }
+  if(b) b.style.display='none';
+}
+function hideForm(cid,prefix){
+  var f=document.getElementById(prefix+'_'+cid);
+  var b=document.getElementById(prefix.replace('form','btn')+'_'+cid);
+  if(f) f.style.display='none';
+  if(b) b.style.display='flex';
+}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function switchCourse(id){ activeCourse=id; render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function switchPane(cid,tab){ activePaneTab[cid]=tab; render(); }
+
+// Initial render (data from localStorage, Firebase will re-render when ready)
+render();
+</script>
+</body>
+</html>
